@@ -14,6 +14,15 @@ const double CLK_TCK = 1000.0;
 
 using namespace std;
 
+
+extern int no_printf(const char *format, ...);
+
+#ifdef PRINTF
+    #define PRINTF_LOG printf
+#else
+    #define PRINTF_LOG no_printf
+#endif
+
 struct support_pt {
   int32_t u;
   int32_t v;
@@ -34,7 +43,7 @@ extern void cudaFreeHost_cpuaa(void *p);
 extern void cuda_computeD(int32_t* disparity_grid_1, int32_t* disparity_grid_2,  vector<Elas::support_pt> &p_support, \
               vector<Elas::triangle> &tri_1, vector<Elas::triangle> &tri_2, \
               float* D1, float* D2,uint8_t* I1, uint8_t* I2, int8_t* P_g,\
-                          int8_t *tp1_g, int8_t* tp2_g, int8_t* tp1_c, int8_t* tp2_c, float* cloud_g);
+                          uint32_t *tp1_g, uint32_t* tp2_g, uint32_t* tp1_c, uint32_t* tp2_c, float* cloud_g);
 
 //extern vector<Elas::support_pt> computeSupportMatches_g(uint8_t* I_desc1, uint8_t* I_desc2) ;
 extern vector<Elas::support_pt> computeSupportMatches_g(uint8_t* I1_desc, uint8_t* I2_desc,\
@@ -48,6 +57,19 @@ extern int ConvertD2Z(float* D1_g,  float* PointXYZ);
 #define HEIGH           240
 #define D_CAN_WIDTH     60
 #define D_CAN_HEIGH     48
+
+
+
+static int no_printf(const char *format, ...){
+    return 0;
+}
+
+#ifdef PRINTF
+    #define PRINTF_LOG printf
+#else
+    #define PRINTF_LOG no_printf
+#endif
+
 
 Elas::Elas(parameters param, int32_t width, int32_t height, int32_t D_can_width, int32_t D_can_height)
 :param(param),desc_1(width, height, width),\
@@ -65,8 +87,8 @@ Elas::Elas(parameters param, int32_t width, int32_t height, int32_t D_can_width,
 
     disp_grid_1_g   = (int32_t*)HostMal((void**)&disp_grid_1_c,  65 * GRID_WIDTH * GRID_HEIGH * sizeof(int32_t));
     disp_grid_2_g   = (int32_t*)HostMal((void**)&disp_grid_2_c,  65 * GRID_WIDTH * GRID_HEIGH * sizeof(int32_t));
-    tp1_g           = (int8_t*)HostMal((void**)&tp1_c, width * height * sizeof(int8_t) );
-    tp2_g           = (int8_t*)HostMal((void**)&tp2_c, width * height * sizeof(int8_t) );
+    tp1_g           = (uint32_t*)HostMal((void**)&tp1_c, width * height * sizeof(uint32_t) );
+    tp2_g           = (uint32_t*)HostMal((void**)&tp2_c, width * height * sizeof(uint32_t) );
 
     P_g             = (int8_t*)HostMal((void**)&P_c, 64 * sizeof(int8_t));
 
@@ -97,13 +119,15 @@ void Elas::process (uint8_t* I1_,uint8_t* I2_)
       desc_1.compute(I1_,width,height,bpl,param.subsampling);
       gettimeofday(&end, NULL);
       timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
-      cout << "two desc1: " << timeuse/1000 << "ms" <<endl;
+//      cout << "two desc1: " << timeuse/1000 << "ms" <<endl;
+      PRINTF_LOG("two desc1: %f ms\n", timeuse/1000);
 
             gettimeofday(&start, NULL);
       desc_2.compute(I2_,width,height,bpl,param.subsampling);
       gettimeofday(&end, NULL);
       timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
-      cout << "two desc2: " << timeuse/1000 << "ms" <<endl;
+//      cout << "two desc2: " << timeuse/1000 << "ms" <<endl;
+      PRINTF_LOG("two desc2: %f ms\n", timeuse/1000);
 
       gettimeofday(&start, NULL);
       vector<support_pt> p_support = computeSupportMatches_g(desc_1.I_desc_g, desc_2.I_desc_g,  D_sup_c, D_sup_g);
@@ -118,7 +142,8 @@ void Elas::process (uint8_t* I1_,uint8_t* I2_)
      //      vector<support_pt> p_support = computeSupportMatches(desc_1.I_desc, desc_2.I_desc);
       gettimeofday(&end, NULL);
       timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
-      cout <<"computesuppportmatch: "<< timeuse/1000 << "ms. " ; cout << "support size: "<<p_support.size() <<endl;
+//      cout <<"computesuppportmatch: "<< timeuse/1000 << "ms. " ; cout << "support size: "<<p_support.size() <<endl;
+      PRINTF_LOG("computesuppportmatch: %f ms; support size: %d\n", timeuse/1000, p_support.size());
 
       // if not enough support points for triangulation
       if (p_support.size()<3)
@@ -132,14 +157,16 @@ void Elas::process (uint8_t* I1_,uint8_t* I2_)
       vector<triangle> tri_2 = computeDelaunayTriangulation(p_support,1);
       gettimeofday(&end, NULL);
       timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
-      cout <<"Delaunay : "<< timeuse/1000 << "ms" <<endl;
+//      cout <<"Delaunay : "<< timeuse/1000 << "ms" <<endl;
+      PRINTF_LOG("Delaunay : %f ms\n", timeuse/1000);
 
       gettimeofday(&start, NULL);
       computeDisparityPlanes(p_support,tri_1,0);
       computeDisparityPlanes(p_support,tri_2,1);
       gettimeofday(&end, NULL);
       timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
-      cout <<"computediparityplanes: "<< timeuse/1000 << "ms" <<endl;
+//      cout <<"computediparityplanes: "<< timeuse/1000 << "ms" <<endl;
+      PRINTF_LOG("computediparityplanes: %f ms\n", timeuse/1000);
 
 
       // allocate memory for disparity grid
@@ -152,15 +179,16 @@ void Elas::process (uint8_t* I1_,uint8_t* I2_)
       createGrid(p_support, disp_grid_2_c, grid_dims,1);
       gettimeofday(&end, NULL);
       timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
-      cout <<"creategrid: "<< timeuse/1000 << "ms" <<endl;
-
+//      cout <<"creategrid: "<< timeuse/1000 << "ms" <<endl;
+      PRINTF_LOG("creategrid: %f ms\n", timeuse/1000);
 
       gettimeofday(&start, NULL);
       cuda_computeD(disp_grid_1_g, disp_grid_1_g, p_support, tri_1, tri_2, D1_data_g, D2_data_g,\
                     desc_1.I_desc_g, desc_2.I_desc_g, P_g, tp1_g, tp2_g, tp1_c, tp2_c , (float*) cloud_g);
       gettimeofday(&end, NULL);
       timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
-      cout <<"cuda_computeD: "<< timeuse/1000 << "ms" <<endl;
+//      cout <<"cuda_computeD: "<< timeuse/1000 << "ms" <<endl;
+      PRINTF_LOG("cuda_computeD: %f ms\n", timeuse/1000);
 
 }
 
@@ -232,7 +260,7 @@ void Elas::computeDisparityPlanes (vector<support_pt> p_support, vector<triangle
   // init matrices
   Matrix A(3,3);
   Matrix b(3,1);
-//  printf("tri.size: %d\n", tri.size());
+//  PRINTF_LOG("tri.size: %d\n", tri.size());
   // for all triangles do
   for (int32_t i=0; i<tri.size(); i++) {
     

@@ -131,6 +131,20 @@ public:
       float z;
   };
 
+  struct support_pt {
+    int32_t u;
+    int32_t v;
+    int32_t d;
+    support_pt(int32_t u,int32_t v,int32_t d):u(u),v(v),d(d){}
+  };
+
+  struct triangle {
+    int32_t c1,c2,c3;
+    float   t1a,t1b,t1c;
+    float   t2a,t2b,t2c;
+    triangle(int32_t c1,int32_t c2,int32_t c3):c1(c1),c2(c2),c3(c3){}
+  };
+
   point *cloud_g, *cloud_c;
   Descriptor desc_1;
   Descriptor desc_2;
@@ -140,10 +154,10 @@ public:
   float *D2_data_c, *D2_data_g; //1->left; 2->right image
   int32_t *disp_grid_1_c, *disp_grid_1_g;
   int32_t *disp_grid_2_c, *disp_grid_2_g;
-  int8_t *tp1_c, *tp1_g;
-  int8_t *tp2_c, *tp2_g;
+  uint32_t *tp1_c, *tp1_g;
+  uint32_t *tp2_c, *tp2_g;
   int8_t *P_g, *P_c;
-
+  triangle* tri_gpu_1, *tri_gpu_2;
   // constructor, input: parameters
   Elas (parameters param, int32_t width, int32_t height, int32_t,int32_t);
 
@@ -161,19 +175,6 @@ public:
 //      std::cout<< "elas deconstructor"<<std::endl;
   }
 
-  struct support_pt {
-    int32_t u;
-    int32_t v;
-    int32_t d;
-    support_pt(int32_t u,int32_t v,int32_t d):u(u),v(v),d(d){}
-  };
-
-  struct triangle {
-    int32_t c1,c2,c3;
-    float   t1a,t1b,t1c;
-    float   t2a,t2b,t2c;
-    triangle(int32_t c1,int32_t c2,int32_t c3):c1(c1),c2(c2),c3(c3){}
-  };
 private:
   inline uint32_t getAddressOffsetImage (const int32_t& u,const int32_t& v,const int32_t& width) {
     return v*width+u;

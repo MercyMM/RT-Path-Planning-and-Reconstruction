@@ -1,3 +1,6 @@
+
+
+
 LIBSRCS = DJI_API.cpp\
           DJI_App.cpp\
           DJI_Camera.cpp \
@@ -44,7 +47,8 @@ LIBLITMUS = /usr/src/liblitmus/liblitmus
 
 CC = g++
 INC = -I$(LIBDIR)/inc  -Iinc
-CXXFLAGS = --std=c++11 $(INC) -DHAVE_OPENCV -pthread  -I${LIBLITMUS}/include -I${LIBLITMUS}/arch/arm/include -I${LIBLITMUS}/arch/arm/include/uapi -I${LIBLITMUS}/arch/arm/include/generated/uapi -mfpu=neon -fpermissive -w -O3
+CXXFLAGS = --std=c++11 $(INC) -DHAVE_OPENCV -pthread  -I${LIBLITMUS}/include -I${LIBLITMUS}/arch/arm/include -I${LIBLITMUS}/arch/arm/include/uapi -I${LIBLITMUS}/arch/arm/include/generated/uapi -mfpu=neon -fpermissive -w -O3 
+#CXXFLAGS = --std=c++11 $(INC) -DHAVE_OPENCV -pthread  -I${LIBLITMUS}/include -I${LIBLITMUS}/arch/arm/include -I${LIBLITMUS}/arch/arm/include/uapi -I${LIBLITMUS}/arch/arm/include/generated/uapi -mfpu=neon -fpermissive -w -O3 -D PRINTF
 #CXXFLAGS = --std=c++11 $(INC) -DHAVE_OPENCV -pthread  -I${LIBLITMUS}/include -I${LIBLITMUS}/arch/arm/include -I${LIBLITMUS}/arch/arm/include/uapi -I${LIBLITMUS}/arch/arm/include/generated/uapi -mfpu=neon -fpermissive -w -O3
 #LDFLAGS = -Wl,-rpath,./ -lpthread -lrt -L./ -lDJI_guidance -lkernel -L/usr/src/liblitmus/liblitmus/ -llitmus  -L/usr/local/lib/ -lusb-1.0 `pkg-config --cflags --libs opencv`
 LDFLAGS = -Wl,-rpath,/home/ubuntu/sd/TK1-bak/pathPlan-test -lpthread -lrt -L./ -lDJI_guidance -lkernel  -L/usr/local/lib/ -lusb-1.0 -L/usr/local/cuda-6.5/targets/armv7-linux-gnueabihf/lib/ `pkg-config --cflags --libs opencv`

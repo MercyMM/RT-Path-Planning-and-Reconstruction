@@ -1,13 +1,41 @@
 ﻿#include "main.h"
 #include "signal.h"
 
+
+
+
+#define SAFE_DIS	0.3   //M100: change to 1m
 int g_reliab , g_distance ;
 int32_t D_can_width = 60;  //[15,310] => 60
 int32_t D_can_height = 48; //[5, 230] => 46
 point goal = {20,0};
 PositionData goal_P;
-  
+PositionData GoalGPS = {0.5348495959, 1.8183969806, 0, 0, 0};
+/*
+typedef struct PositionData
 
+{
+  float64_t latitude;
+  float64_t longitude;
+  float32_t altitude;
+  float32_t height;
+  uint8_t health;
+} PositionData;
+*/
+
+
+
+
+
+static int no_printf(const char *format, ...){
+    return 0;
+}
+
+#ifdef PRINTF
+    #define PRINTF_LOG printf
+#else
+    #define PRINTF_LOG no_printf
+#endif
 int my_callback(int data_type, int data_len, char *content);
 int setupDJI(LinuxSerialDevice* serialDevice, CoreAPI* api, LinuxThread* read);
 int init_Guidance();
@@ -16,30 +44,33 @@ void* imageProcess(void* api);
 int ElasCom(const Elas &elas, uint8_t *I1, uint8_t *I2);
 void SetGoal(CoreAPI* api, float Xoff, float Yoff);
 int GetOrSetIndex(int flag, int index);
+int BitCount(unsigned int n);
 
 //int moveWithVelocity(CoreAPI* api, Flight* flight, float32_t xVelocityDesired, float32_t yVelocityDesired, float32_t zVelocityDesired, float32_t yawRateDesired ,  int timeoutInMs, float yawRateThresholdInDegS = 0.5, float velThresholdInMs = 0.5);
+int guidance_start = 0;
 void sig_handler(int sig){
     if(sig == SIGINT){
-
-        printf("stop_transfe1\n");
+        if(guidance_start == 0)
+            exit(0);
+        PRINTF_LOG("stop_transfe1\n");
         int err_code = stop_transfer();
         RETURN_IF_ERR2( err_code );
         //make sure the ack packet from GUIDANCE is received
         usleep( 10000 );
-        printf("stop_transfe2\n");
+        PRINTF_LOG("stop_transfe2\n");
         err_code = release_transfer();
-        printf("stop_transfe3\n");
+        PRINTF_LOG("stop_transfe3\n");
         RETURN_IF_ERR2( err_code );
-        printf("stop_transfe4\n");
+        PRINTF_LOG("stop_transfe4\n");
         exit(0);
     }
 }
 
 int main(int argc, char** argv)
 {
-signal(SIGINT, sig_handler);
-    printf("wait 5min\n");
-    usleep(1000000);
+    signal(SIGINT, sig_handler);
+//    PRINTF_LOG("wait 5min\n");
+//    usleep(1000000);
 
 
     int status;
@@ -54,8 +85,9 @@ signal(SIGINT, sig_handler);
     sem_init(&g_full, 0, 0);
     sem_init(&disTooSmall, 0, 0);
     sem_init(&sem_Index, 0, 1);
+    sem_init(&SyncImage, 0, 0);
 
-//    printf("main tid = %d\n", gettid());
+//    PRINTF_LOG("main tid = %d\n", gettid());
     pthread_t imagePID;
     pthread_t imagePID2;
 
@@ -84,42 +116,52 @@ signal(SIGINT, sig_handler);
     //!  Takeoff
     ackReturnData takeoffStatus;
 //    takeoffStatus = monitoredTakeoff(api, flight, blockingTimeout);
-    printf("get control\n");
-    printf("sleep 90s\n");
-    usleep(1000000);
 
+/*
+           for(int i = 0; i < 100; i++){
+                flight->setMovementControl(0x4b, 0.2, 0, 0, 0);
+                usleep(100000); // 10000 ns;????
+           }
+
+return 0;
+*/
     pthread_create(&imagePID, NULL, imageProcess, (void*)api);
-//        pthread_join( imagePID, NULL);
-//return 0;
-  /*  
-for(int i = 0; i < 500; i++)    
-{
-        float Vx, Vy;
-        int index_copy ;
-        index_copy = GetOrSetIndex(0, 0);
-	index_copy = 10;
-
-        if(0 > index_copy)
-        {
-            moveWithVelocity(api, flight, 0, 0, 0, 0, 21);
-        }else //if ( index_copy >= 0 && index_copy <= 16)
-        {
-//           Vx = SpeedWindow[index_copy].y;
-//            Vy = -SpeedWindow[index_copy].x;
-		Vx = 0;
-		Vy = 0.2;		
-            printf("%d: %f, %f\n", index_copy, Vx, Vy);
-                uint8_t flag = 0x4b; //Velocity Control
-                flight->setMovementControl(flag, Vx, Vy, 0, 0);
-            usleep(10000); // 10000 ns;????
-        }
-
-    }
-
-
+    sem_wait(&SyncImage);
+    usleep(70000);
 //    pthread_join( imagePID, NULL);
-    return 0;
-*/    
+//    return 0;
+
+
+/*
+while(1){
+  QuaternionData curQuaternion = api->getBroadcastData().q;
+  DJI::EulerAngle curEuler = Flight::toEulerAngle(curQuaternion);
+printf("current yaw: %f\n", curEuler.yaw / DEG2RAD);
+usleep(1000000);
+}
+
+return 0;
+
+  QuaternionData curQuaternion = api->getBroadcastData().q;
+  DJI::EulerAngle curEuler = Flight::toEulerAngle(curQuaternion);
+printf("start \n");
+attitudeControl(api, flight, 0, 0, 60, 10000, 1);
+   curQuaternion = api->getBroadcastData().q;
+   curEuler = Flight::toEulerAngle(curQuaternion);
+printf("current yaw: %f\n", curEuler.yaw / DEG2RAD);
+usleep(10000000);
+
+
+usleep(5000000);
+attitudeControl(api, flight, 0, 0, -60, 10000, 1);
+printf("start stop\n");
+   curQuaternion = api->getBroadcastData().q;
+   curEuler = Flight::toEulerAngle(curQuaternion);
+printf("current yaw: %f\n", curEuler.yaw / DEG2RAD);
+usleep(10000000);
+*/
+
+
     //! If the aircraft took off, continue to do flight control tasks
     takeoffStatus.status = 1;
     if (takeoffStatus.status == 1)
@@ -132,15 +174,15 @@ for(int i = 0; i < 500; i++)
         !*/
         //init flight thread real-time param
         //set goal
-        printf("sleep 3s\n");
-        uint8_t flag = 0x4b; //Velocity Control
-        usleep(3000000);
 
 //           for(int i = 0; i < 100; i++){
 //                flight->setMovementControl(flag, 0.2, 0, 0, 0);
 //                usleep(100000); // 10000 ns;????
 //           }
 //return 0;
+        int FlyTime = 0;
+        int StopTime = 0;
+        unsigned int direct = 0;
         while(1)
         {
 
@@ -153,21 +195,97 @@ for(int i = 0; i < 500; i++)
             index_copy = GetOrSetIndex(0, 0);
 
 
-            if(0 > index_copy)
+            if(index_copy < 0)
             {
                 moveWithVelocity(api, flight, 0, 0, 0, 0, 21);
-                printf("stop");
+                usleep(10000);
+/*                StopTime += 10;
+                if( StopTime > 1000){
+                    int count = BitCount(direct);
+                    if( count > 5){
+                        //move right
+                        uint8_t flag = 0x4b; //Velocity Control
+                        for(int j = 0; j < 50; j++){
+                            flight->setMovementControl(flag, 0, -0.5, 0, 0);
+                            usleep(20000);
+                        }
+                    }else {
+                        //move left
+                        uint8_t flag = 0x4b; //Velocity Control
+                        for(int j = 0; j < 50; j++){
+                            flight->setMovementControl(flag, 0, 0.5, 0, 0);
+                            usleep(20000);
+                        }
+                    }
+
+                    StopTime = 0;
+                    printf("index_copy < 0; stop too long\n");
+                }
+                PRINTF_LOG("stop");
+*/
             }else //if ( index_copy >= 0 && index_copy <= 16)
             {
+                StopTime = 0;
+             /*   if (index_copy > 8){
+                    direct = direct << 1;
+                }else {
+                    direct = direct << 1 + 1;
+                }
+               */
                 Vx = -SpeedWindow[index_copy].x;
                 Vy = SpeedWindow[index_copy].y;
-            printf("%d: %f, %f\n", index_copy, Vx, Vy);
+                PRINTF_LOG("%d: %f, %f\n", index_copy, Vx, Vy);
 
                 uint8_t flag = 0x4b; //Velocity Control
                 flight->setMovementControl(flag, Vx, Vy, 0, 0);
                 usleep(10000); // 10000 ns;????
 
-            }
+/*
+                PositionData curPosition = api->getBroadcastData().pos;
+                double deltaLon = GoalGPS.longitude - curPosition.longitude;
+                double deltaLat = GoalGPS.latitude - curPosition.latitude;
+                double x =  deltaLon * C_EARTH;
+                double y = deltaLat * C_EARTH * cos(GoalGPS.latitude);
+                if( (x*x + y*y) < 1){
+                    attitudeControl(api, flight, 0, 0, 0, 10000, 1);
+                    attitudeControl(api, flight, 0, 0, 180, 10000, 1);
+                    attitudeControl(api, flight, 0, 0, 90, 10000, 1);
+                    attitudeControl(api, flight, 0, 0, 270, 10000, 1);
+                    printf("arrive :) \n\n");
+                    while(1);
+                }
+
+                FlyTime += 10;
+                if(FlyTime > 5000){
+                    FlyTime = 0;
+                    deltaLon = GoalGPS.longitude - curPosition.longitude;
+                    deltaLat = GoalGPS.latitude - curPosition.latitude;
+                    x =  deltaLon * C_EARTH;
+                    y =  deltaLat * C_EARTH * cos(GoalGPS.latitude);
+                    //printf(" x,y: %lf,  %lf  \n", x, y);
+                    double yawDesired;
+                    if( x != 0 )
+                        yawDesired  = atan(y/x) * 180 / 3.14159265;
+                    else {
+                        if( y > 0)
+                            yawDesired = 90;
+                        else
+                            yawDesired = -90;
+                    }
+                    if(x < 0 && y > 0)
+                        yawDesired = 180 + yawDesired;
+                    else if( x < 0 && y < 0)
+                        yawDesired = -(180 - yawDesired);
+                    QuaternionData curQuaternion = api->getBroadcastData().q;
+                    DJI::EulerAngle curEuler = Flight::toEulerAngle(curQuaternion);
+                    if (abs((curEuler.yaw/ DEG2RAD) - yawDesired) < 1){
+                        FlyTime = 2000;
+                    }else {
+                        attitudeControl(api, flight, 0, 0, yawDesired, 10000, 1);
+                    }
+
+                }
+      */      }
 
         }
 //           for(int i = 0; i < 50; i++){
@@ -226,9 +344,9 @@ int my_callback(int data_type, int data_len, char *content)
     g_lock.enter();
     if (e_image == data_type && NULL != content)
     {
-//        printf("wait empty\n");
+//        PRINTF_LOG("wait empty\n");
 //        sem_wait(&g_empty);
-//        printf("enter empty\n");
+//        PRINTF_LOG("enter empty\n");
         image_data* data = (image_data* )content;
 
         if ( data->m_greyscale_image_left[sensor_id] && data->m_greyscale_image_right[sensor_id])
@@ -238,17 +356,17 @@ int my_callback(int data_type, int data_len, char *content)
             memcpy( g_greyscale_image_left[which].data, data->m_greyscale_image_left[sensor_id], IMAGE_SIZE );
             memcpy( g_greyscale_image_right[which].data, data->m_greyscale_image_right[sensor_id], IMAGE_SIZE );
 
-//            printf("write\n");
+//            PRINTF_LOG("write\n");
 
         }else
         {
             g_greyscale_image_left[which].release();
             g_greyscale_image_right[which].release();
-            printf("\n\n=====release\n");
+            PRINTF_LOG("\n\n=====release\n");
 //            while(1);
         }
 //        sem_post(&g_full);
-//        printf("enter--\n");
+//        PRINTF_LOG("enter--\n");
         lock_which.enter();
         which_old = which;
         lock_which.leave();
@@ -258,8 +376,8 @@ int my_callback(int data_type, int data_len, char *content)
         {
             which = 0;
         }
-//        printf("which = %d\n", which);
-//        printf("leave\n");
+//        PRINTF_LOG("which = %d\n", which);
+//        PRINTF_LOG("leave\n");
     }else if(e_ultrasonic == data_type && NULL != content)
     {
         ultrasonic_data *data = (ultrasonic_data* )content;
@@ -268,13 +386,13 @@ int my_callback(int data_type, int data_len, char *content)
 
             g_reliab = reliab;
             g_distance = distance;
-//        printf(" %d, %d\n", reliab, distance);
+//        PRINTF_LOG(" %d, %d\n", reliab, distance);
 
         if(reliab == 1 && distance < 800) //distance < 0.8m
         {
 //            sem_wait(&disTooSmall);
             mmm++;
-//            printf("%d: %d ultrasonic_data = %d \n", mmm, sensor_id,distance);
+//            PRINTF_LOG("%d: %d ultrasonic_data = %d \n", mmm, sensor_id,distance);
             _index_vola = -5;
         }
 
@@ -282,7 +400,7 @@ int my_callback(int data_type, int data_len, char *content)
 //        gettimeofday(&tEndTime, NULL);
 //        delay = 1000000 * (tEndTime.tv_sec - tStartTime.tv_sec) +\
 //                (tEndTime.tv_usec - tStartTime.tv_usec);
-//        printf("obstacle_distance time = %d ms\n", delay / 1000);
+//        PRINTF_LOG("obstacle_distance time = %d ms\n", delay / 1000);
 //        tStartTime = tEndTime;
 
     }
@@ -312,7 +430,7 @@ int init_Guidance()
     reset_config();  // clear all data subscription
 
     //Initialize Guidance and create data transfer thread.
-//    printf("create data transfer thread\n");
+//    PRINTF_LOG("create data transfer thread\n");
     int err_code = init_transfer();
     RETURN_IF_ERR( err_code );
 
@@ -368,7 +486,7 @@ int init_Guidance()
     err_code = start_transfer();
     RETURN_IF_ERR( err_code );
 
-//    printf("init Mat \n");
+//    PRINTF_LOG("init Mat \n");
     //init g_greyscale_image_left[QUEUE_LEN] data;
 //    for(int i = 0; i < QUEUE_LEN; i ++)
 //    {
@@ -379,12 +497,8 @@ int init_Guidance()
 void* imageProcess(void* api)
 {
 
-
-        printf("sleep 10s\n");
-//    usleep(10000000); // 10s;
     init_Guidance();
-
-
+    guidance_start = 1;
     char key;
     char name_left[] = "l_0.png";
     char name_right[] = "r_0.png";
@@ -405,27 +519,30 @@ void* imageProcess(void* api)
     Elas::parameters param;
     Elas elas(param, (int32_t)WIDTH, (int32_t)HEIGH, D_can_width, D_can_height );
 
-//    string ROOT = "/home/ubuntu/sd/TK1-bak/image_png/";
-//    string left = "left6.png";
-//    string right = "right6.png";
+    sem_post(&SyncImage);
+
+//    string ROOT = "/home/ubuntu/pathplan/pathPlan-test/image/";
+//    string left = "left25.png";
+//    string right = "right25.png";
 //    IplImage *img1 , *img2 ;
 
-
+	int ind = 0;
     while(1)
     {
+
 //        string str = ROOT+left;
-//        cout << str;
+//        cout << str << endl;
 //        img1 = cvLoadImage(str.c_str(),0);
 //        str = ROOT+right;
 //        img2 = cvLoadImage(str.c_str(),0);
-//        cout << str;
+//        cout << str << endl;
 //        g_greyscale_image_left[0] = Mat::zeros(HEIGHT, WIDTH, CV_8UC1);
 //        g_greyscale_image_right[0] = Mat::zeros(HEIGHT,WIDTH,CV_8UC1);
 //        memcpy( g_greyscale_image_left[0].data, img1->imageData, IMAGE_SIZE );
 //        memcpy( g_greyscale_image_right[0].data, img2->imageData, IMAGE_SIZE );
 
 
-//        printf("continue\n");
+//        PRINTF_LOG("continue\n");
 //        sem_wait(&g_full);
         lock_which.enter();
         int which_cpy = which_old;
@@ -434,21 +551,31 @@ void* imageProcess(void* api)
 
         if(!g_greyscale_image_left[which_cpy].empty() && !g_greyscale_image_right[which_cpy].empty())
         {
-//            printf("show\n");
-            //imshow(string("left_")+char('0'+sensor_id), g_greyscale_image_left[which_cpy]);
-            //imshow(string("right_")+char('0'+sensor_id), g_greyscale_image_right[which_cpy]);
+//            PRINTF_LOG("show\n");
+//            imshow(string("left_")+char('0'+sensor_id), g_greyscale_image_left[which_cpy]);
+//            imshow(string("right_")+char('0'+sensor_id), g_greyscale_image_right[which_cpy]);
 
-            //key =  cvWaitKey(1);
+//            key =  cvWaitKey(1);
 
             //1. call elas add DWA; return Vx, Vy;
             //2. sem_post Vx, Vy; func main call sem_wait and get Vx, Vy;
             //elas + DWA
+
+            struct timeval start, end;
+            double timeuse;
+            gettimeofday(&start, NULL);
+
             ElasCom(elas, (uint8_t*)g_greyscale_image_left[which_cpy].data, \
                         (uint8_t*)g_greyscale_image_right[which_cpy].data);
+            gettimeofday(&end, NULL);
+            timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
+            printf("ElasCom : %fms\n", timeuse/1000);
 //            cout<< "dis: "<< g_reliab <<", "<<g_distance<<endl;
 //            usleep(100000);
-            cout << "gg index: " << GetOrSetIndex(0,0) << endl;
+            cout << ind << "gg index: " << GetOrSetIndex(0,0) << endl;
             cout << endl;
+        ind++;
+//        return 0;
             /*
                 imwrite(name_left, g_greyscale_image_left[which_cpy]);
                 name_left[2]++;
@@ -457,16 +584,26 @@ void* imageProcess(void* api)
 if( name_right[2] > '9')
 return 0;
 */
-//                key =  cvWaitKey(1);
+        /*
+        char pic[50];
+        sprintf(pic, "./image/left%02d.png", ind);
+                imwrite(pic, g_greyscale_image_left[which_cpy]);
+        sprintf(pic, "./image/right%02d.png", ind);
+                imwrite(pic, g_greyscale_image_right[which_cpy]);
+        key = getchar();
+printf("stop");
+*/
+//        while(1);
+//                key =  cvWaitKey(0);
 //          return 0;
 //usleep(1000000);
-//printf("sleep 1s\n");
+//PRINTF_LOG("sleep 1s\n");
 //left[4]++;
 //right[5]++;
-            if(' ' == key){
-                imwrite(name_left, g_greyscale_image_left[which_cpy]);
+            if('s' == key){
+                imwrite("./left.png", g_greyscale_image_left[which_cpy]);
                 name_left[2]++;
-                imwrite(name_right, g_greyscale_image_right[which_cpy]);
+                imwrite("./right.png", g_greyscale_image_right[which_cpy]);
                 name_right[2]++;
             }else if ('q' == key){
                 _index_vola = -5;
@@ -506,18 +643,18 @@ return 0;
 
 
     }
-                  printf("destroyAllWindows\n");
+                  PRINTF_LOG("destroyAllWindows\n");
                 destroyAllWindows();
-    printf("stop_transfe1\n");
+    PRINTF_LOG("stop_transfe1\n");
     err_code = stop_transfer();
     RETURN_IF_ERR2( err_code );
     //make sure the ack packet from GUIDANCE is received
     usleep( 10000 );
-    printf("stop_transfe2\n");
+    PRINTF_LOG("stop_transfe2\n");
     err_code = release_transfer();
-    printf("stop_transfe3\n");
+    PRINTF_LOG("stop_transfe3\n");
     RETURN_IF_ERR2( err_code );
-    printf("stop_transfe4\n");
+    PRINTF_LOG("stop_transfe4\n");
     return 0;
 }
 
@@ -538,19 +675,19 @@ int ElasCom(const Elas &elas, uint8_t *I1, uint8_t *I2)
     elas.process(I1, I2);
     gettimeofday(&end, NULL);
     timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
-    printf("xxxxxxxxxxxxxxxxxxxxxxx elas process use : %fms\n", timeuse/1000);
+    PRINTF_LOG("xxxxxxxxxxxxxxxxxxxxxxx elas process use : %fms\n", timeuse/1000);
 
     gettimeofday(&start, NULL);
     createObs(elas, obs_arr, &obstacle);
     gettimeofday(&end, NULL);
     timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
-    printf("createObs : %fms\n", timeuse/1000);
+    PRINTF_LOG("createObs : %fms\n", timeuse/1000);
 
     gettimeofday(&start, NULL);
     DynamicWindowApproach( &obstacle[0], obstacle.size(), goal);
     gettimeofday(&end, NULL);
     timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
-    printf("DWA : %fms\n", timeuse/1000);
+    PRINTF_LOG("DWA : %fms\n", timeuse/1000);
     return 1;
 }
 
@@ -562,7 +699,7 @@ int DynamicWindowApproach(point* obstacle, int obs_nums,  point goal)
     //traj 存放64个移动4s后的飞行器位置
     GenerateTraj(obstacle, obs_nums);
 
-//	printf("NormalizeEval\n");
+//	PRINTF_LOG("NormalizeEval\n");
     // 各评价函数正则化
     NormalizeEval(goal);
 
@@ -579,7 +716,7 @@ int GenerateTraj(point* obstacle, int obs_nums)
     float Vx, Vy;
     float Px, Py;
 
-//	printf("predict point:\n");
+//	PRINTF_LOG("predict point:\n");
     for(int i = 0; i < DIRECTIONS; i++) //DIRECTIONS= 8+1+8
     {
         Vx = abs(SpeedWindow[i].x);
@@ -600,7 +737,7 @@ int GenerateTraj(point* obstacle, int obs_nums)
 
                 if(obs_dis < SAFE_DIS ) //0.7
                 {
-//                    printf("%d, %d, %d, (%f, %f), %f\n", i, t, k, \
+//                    PRINTF_LOG("%d, %d, %d, (%f, %f), %f\n", i, t, k, \
 //                           Px, Py, obs_dis);
                     flag = 1;
                     predict[i].x = 0;
@@ -613,7 +750,7 @@ int GenerateTraj(point* obstacle, int obs_nums)
         }
         if(1 == flag)
         {
-//			printf("xxxx\n");
+//			PRINTF_LOG("xxxx\n");
             continue;
         }
 
@@ -624,10 +761,10 @@ int GenerateTraj(point* obstacle, int obs_nums)
         predict[i].y = Py;
         // predict[i].p.x = SpeedWindow[i].x * PREDICTT;
         // predict[i].p.y = SpeedWindow[i].y * PREDICTT;
-//		printf("%f, %f  \n",Px, Py);
+//		PRINTF_LOG("%f, %f  \n",Px, Py);
 
     }
-//	printf("\n");
+//	PRINTF_LOG("\n");
 }
 
 int NormalizeEval(point goal)
@@ -636,13 +773,13 @@ int NormalizeEval(point goal)
     {
         if( 0 == predict[i].x && 0 == predict[i].y)
         {
-//			printf("xxxx\n");
+//			PRINTF_LOG("xxxx\n");
             continue;
         }
         float del_x = goal.x-predict[i].x;
         if ( 0 == del_x)
         {
-//			printf("del_x == 0\n");
+//			PRINTF_LOG("del_x == 0\n");
             while(1);
         }
 
@@ -652,7 +789,7 @@ int NormalizeEval(point goal)
 
         if( 0 > EvalDB[i].heading)
             EvalDB[i].heading = -EvalDB[i].heading;
-//		printf(" %f\n", EvalDB[i].heading);
+//		PRINTF_LOG(" %f\n", EvalDB[i].heading);
     }
     float heading_sum, dist_sum, Vx_sum;
     for(int i = 0; i < DIRECTIONS; i++)
@@ -665,19 +802,19 @@ int NormalizeEval(point goal)
         dist_sum 	+= EvalDB[i].dist;
         Vx_sum		+= EvalDB[i].Vx;
     }
-//	printf("heading_sum: %f\n", heading_sum);
-    // printf("%f, %f, %f\n", heading_sum, dist_sum, Vx_sum);
+//	PRINTF_LOG("heading_sum: %f\n", heading_sum);
+    // PRINTF_LOG("%f, %f, %f\n", heading_sum, dist_sum, Vx_sum);
     for(int i = 0; i < DIRECTIONS; i++)
     {
         if( 0 == predict[i].x && 0 == predict[i].y)
         {
-            printf("%d: xxxx\n", i);
+            PRINTF_LOG("%d: xxxx\n", i);
             continue;
         }
         EvalDB_Nor[i].heading = EvalDB[i].heading / heading_sum;
         EvalDB_Nor[i].dist 	  = EvalDB[i].dist /dist_sum;
         EvalDB_Nor[i].Vx      = EvalDB[i].Vx / Vx_sum;
-        printf("%d: %f, %f  =  %f\n", i, EvalDB_Nor[i].heading, EvalDB_Nor[i].dist, \
+        PRINTF_LOG("%d: %f, %f  =  %f\n", i, EvalDB_Nor[i].heading, EvalDB_Nor[i].dist, \
                HEADING * EvalDB_Nor[i].heading + DIST * EvalDB_Nor[i].dist);
     }
 
@@ -707,7 +844,7 @@ int Evaluation()
     }
     */
     int optimize = 100;
-
+/*
     for(int i = 0; i < DIRECTIONS; i++)
     {
         if( 0 == predict[i].x && 0 == predict[i].y)
@@ -718,10 +855,27 @@ int Evaluation()
         }
 
     }
-//    printf(" %d ", tmp_index);
+    GetOrSetIndex(1, tmp_index);
+    */
+    int best[DIRECTIONS];
+    int best_ind = 0;
+    for(int i = 0; i < DIRECTIONS; i++)
+    {
+        if( 0 == predict[i].x && 0 == predict[i].y)
+            continue;
+        best[best_ind] = i;
+        best_ind++;
+    }
+    if(best_ind == 0)
+        GetOrSetIndex(1, -1);
+    else {
+        GetOrSetIndex(1, best[(best_ind-1)/2]);
+    }
+
+
+//    PRINTF_LOG(" %d ", tmp_index);
 
 //    sem_wait(&disTooSmall);
-    GetOrSetIndex(1, tmp_index);
 //    _index_vola = tmp_index;
 //    sem_post(&disTooSmall);
 
@@ -797,7 +951,7 @@ void createObs(const Elas &elas, struct obs_point *obs_arr, \
                     struct obs_point *p = &obs_arr[u];
 
                     //if(124 == u)
-                    //    printf("124: (%f, %f) \n", dis_z, dis_x);
+                    //    PRINTF_LOG("124: (%f, %f) \n", dis_z, dis_x);
                     if(0 == p->y)
                     {
                         p->y = dis_x;
@@ -824,7 +978,7 @@ void createObs(const Elas &elas, struct obs_point *obs_arr, \
 
 //    gettimeofday(&end, NULL);
 //    timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
-//    printf(" create Obs1---true : %fms\n", timeuse/1000);
+//    PRINTF_LOG(" create Obs1---true : %fms\n", timeuse/1000);
 
 //    gettimeofday(&start, NULL);
     //clear not use
@@ -832,7 +986,7 @@ void createObs(const Elas &elas, struct obs_point *obs_arr, \
     {
         if(obs_arr[i].num >= 5)
         {
-//           printf("(%f, %f) %d %d\n", obs_arr[i].x, obs_arr[i].y, obs_arr[i].num, i);
+//           PRINTF_LOG("(%f, %f) %d %d\n", obs_arr[i].x, obs_arr[i].y, obs_arr[i].num, i);
 
         }
         else //if(18 > obs_arr[i].num)
@@ -868,7 +1022,7 @@ void createObs(const Elas &elas, struct obs_point *obs_arr, \
             obsN.y = obs_arr[i].y / 1000;
             obstacle->push_back(obsN);
 //show obstacle point
-            printf("{%f, %f},\n", obsN.x, obsN.y);
+            PRINTF_LOG("{%f, %f},\n", obsN.x, obsN.y);
             i += 5;
         }
         else
@@ -884,7 +1038,7 @@ void createObs(const Elas &elas, struct obs_point *obs_arr, \
     //obstacle.push_back(obsN);
 //    gettimeofday(&end, NULL);
 //    timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
-//    printf(" create Obs---true : %fms\n", timeuse/1000);
+//    PRINTF_LOG(" create Obs---true : %fms\n", timeuse/1000);
 
 //    cvShowImage("y",img1f);
 //    cvShowImage("consistency",img2f);
@@ -912,6 +1066,7 @@ int GetOrSetIndex(int flag, int index)
     }else if( 0 == flag) { //get index
         index_num++;
         if(index_num > 20){
+		printf("index too long\n");
             index_num = 30;
             sem_post(&sem_Index);
             return -1;
@@ -944,3 +1099,15 @@ int GetOrSetIndex(int flag, int rel, int dis)
 }
 */
 
+
+int BitCount(unsigned int n)
+{
+    unsigned int c =0 ; // 计数器
+    for (int i = 0; i < 10; i++)
+    {
+        if((n &1) ==1) // 当前位是1
+            ++c ; // 计数器加1
+        n >>=1 ; // 移位
+    }
+    return c ;
+}

@@ -97,6 +97,7 @@ sem_t   g_empty;
 sem_t   g_full;
 sem_t   disTooSmall;
 sem_t   sem_Index;
+sem_t   SyncImage;
 
 DJI_lock    lock_which; //enter, leave
 int volatile which = 0;
@@ -189,7 +190,8 @@ int Evaluation();
 #define PREDICTT 10      //predict time 6s;
 
 #define DEL_DIS		0.5
-#define SAFE_DIS	0.5    //M100: width 0.51; 1m is too far
+//#define SAFE_DIS	0.5    //M100: width 0.51; 1m is too far
+//#define SAFE_DIS	1    //M100: change to 1m
 //use ./picture3/left18 will no path
 
 //eval func param

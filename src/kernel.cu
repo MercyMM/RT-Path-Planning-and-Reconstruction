@@ -602,13 +602,19 @@ __global__ void Convert(float *D_g, float *cloud_g)
     int v = blockDim.y * blockIdx.y + threadIdx.y;
     v += 20;
     float w = 0, x = 0, y = 0, z = 0;
+
+    if(u + v * WIDTH > 320 * 240)
+        printf("\n+++++++++++++  id3 out %d\n", u + v * WIDTH);
+
     float dis = D_g[u + v * WIDTH];
 
 
 
         w = 0.006669723997311648 * dis;
-        if(w == 0 )
-            printf("bug. w == 0\n");
+        if(w == 0 ){
+//            printf("bug. w == 0\n");
+            w = 0.00000001;
+        }
         x = (float)((u - 161.2100334167481) / w);
         y = (float)(- (v - 119.9240913391113) / w); //has bug
         z = (float)(241.57918 / w);
@@ -655,23 +661,25 @@ int ConvertD2Z(float* D1_g,  float* cloud_g)
  * 5. cuda_computeD
  ***/
 int tri_size = 0;
-__constant__ int32_t grid_dims_g[3] = {65, WIDTH/GRID_SIZE, HEIGH/GRID_SIZE} ;
+__constant__ int32_t grid_dims_g[3] = {65, 16, 12} ;
 __constant__ int8_t temp[] = {-14,-9,-2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 
 __global__ void Triangle_Match1(Elas::triangle* tri, int32_t* disparity_grid,\
                                 uint8_t* I1_desc, uint8_t* I2_desc, int8_t* P, \
                                 int32_t plane_radius, bool right_image, float* D,  \
-                                int8_t* tp, int tri_size)
+                                uint32_t* tp, int tri_size)
 {
 
     float plane_a = 0, plane_b = 0, plane_c = 0, plane_d = 0;
 
     int u = blockDim.x * blockIdx.x + threadIdx.x;
-    int v = blockDim.y * blockIdx.y + threadIdx.y;
-    int32_t id;
+    int v = blockDim.y * blockIdx.y + threadIdx.y ;
+    uint32_t id;
     __shared__ uint8_t      __I1_desc_share[320 * 16];
     __shared__ uint8_t      __I2_desc_share[320 * 16];
-
+//    if(u == 245 && v == 5){
+//        printf("aa:\n");
+//    }
     if(u >= 320)
         printf("\n+++++++++++++  u out %d\n", u);
     if(v >= 240)
@@ -682,13 +690,12 @@ __global__ void Triangle_Match1(Elas::triangle* tri, int32_t* disparity_grid,\
         __I2_desc_share[u + i*320] = I2_desc[v * 320*16 + u + i*320];
     }
     __syncthreads();
-
     id = tp[u + v * WIDTH];
 
         if(u + v * WIDTH > 320 * 240)
             printf("\n+++++++++++++  id1 out %d\n", u + v * WIDTH);
         if(id > tri_size)
-            printf("\n+++++++++++++  id2 out %d\n", id);
+            printf("\n+++++++++++++  id2 out %d,%d\n", id, tri_size);
 
     plane_a = tri[id].t1a;
     plane_b = tri[id].t1b;
@@ -701,8 +708,9 @@ __global__ void Triangle_Match1(Elas::triangle* tri, int32_t* disparity_grid,\
     // address of disparity we want to compute
     uint32_t d_addr;
     d_addr = getAddressOffsetImage1(u, v, WIDTH);
-if(d_addr > 320 * 240)
-    printf("+++++++++d_addr out %d\n", d_addr);
+    if(d_addr > 320 * 240)
+        printf("+++++++++d_addr out %d\n", d_addr);
+
             uint8_t *I1_line_addr, *I2_line_addr;
             I2_line_addr = __I2_desc_share ;
             uint8_t* I1_block_addr = __I1_desc_share + 16 * u;
@@ -731,9 +739,12 @@ if(d_addr > 320 * 240)
 
 //(gird_y * 16 + grid_x) * 65
 
+//            uint32_t grid_addr = (grid_y * grid_dims_g[1] + grid_x ) * grid_dims_g[0] + 0; //getAddressOffsetGrid1(grid_x, grid_y, 0, grid_dims_g[1], grid_dims_g[0]);
             uint32_t grid_addr = getAddressOffsetGrid1(grid_x, grid_y, 0, grid_dims_g[1], grid_dims_g[0]);
-            if( (grid_addr + 1) > 65 * 12 * 16)
-                printf("++++++++++ grid_addr out %d\n", grid_addr);
+//            uint32_t grid_addr = (grid_y * 16 + grid_x ) * 65 + 0; //getAddressOffsetGrid1(grid_x, grid_y, 0, grid_dims_g[1], grid_dims_g[0]);
+            if( (grid_addr + 1) > 65 * 12 * 16){
+                printf("++++++++++ grid_addr out %d, %d, %d, %d\n", grid_x, grid_y, grid_dims_g[1], grid_dims_g[0]);
+            }
             int32_t  num_grid = *(disparity_grid + grid_addr);
             if( num_grid > 64 )
                 printf("++++++++++ num_grid out %d\n", num_grid);
@@ -744,15 +755,19 @@ if(d_addr > 320 * 240)
             int32_t min_val = 10000;
             int32_t min_d = -1;
 
+//            if(u == 245 && v == 5){
+//                printf("aa:%d, %d, %d\n", num_grid, d_plane_min, d_plane_max);
+//            }
 
             // left image
-
             if (!right_image) {
-        #pragma unroll
+
                 for (int32_t i = 0; i<num_grid; i++) {
                     d_curr = d_grid[i];
+//                    printf("u=%d, %d\n", u, d_curr);
                     if (d_curr<d_plane_min || d_curr>d_plane_max) {
                         u_warp = u - d_curr;
+
                         if (u_warp<window_size || u_warp >= WIDTH - window_size)
                             continue;
                         if(u_warp < 0 || u_warp > 320)
@@ -760,42 +775,58 @@ if(d_addr > 320 * 240)
                        updatePosteriorMinimumNew(I1_block_addr, I2_line_addr + 16 * u_warp, d_curr, val, min_val, min_d);
                     }
                 }
-        #pragma unroll
+//                if(v > 0 && v < 6 && u >0 && u < 20)
+//                    printf("2u=%d, %d, %d, %d, %d\n", u, v, d_curr, d_plane_min, d_plane_max);
+
+//                int tmp;
+//                for (tmp = d_plane_min; tmp <= d_plane_max; tmp++) {
+//                    tmp++;
+//                    updatePosteriorMinimumNew1(I1_block_addr, I2_line_addr + 16 * tmp, tmp, valid ? *(temp + abs(tmp - d_plane)) : 0, val, min_val, min_d);
+//                }
                 for (d_curr = d_plane_min; d_curr <= d_plane_max; d_curr++) {
                     u_warp = u - d_curr;
+//                    if(v > 0 && v < 6 && u >0 && u < 20)
+//                        printf("1u=%d, %d, %d, %d, %d\n", u, v, d_curr, d_plane_min, d_plane_max);
                     if (u_warp<window_size || u_warp >= WIDTH - window_size)
                         continue;
                     if(u_warp < 0 || u_warp > 320)
                         printf("_+++++++++ u_wrap2 out %d\n", u_warp);
-//                    updatePosteriorMinimumNew1(I1_block_addr, I2_line_addr + 16 * u_warp, d_curr, valid ? *(P + abs(d_curr - d_plane)) : 0, val, min_val, min_d);
                     updatePosteriorMinimumNew1(I1_block_addr, I2_line_addr + 16 * u_warp, d_curr, valid ? *(temp + abs(d_curr - d_plane)) : 0, val, min_val, min_d);
                 }
-            }
-            else {
+
+            } else {
+
         #pragma unroll
                 for (int32_t i = 0; i<num_grid; i++) {
                     d_curr = d_grid[i];
                     if (d_curr<d_plane_min || d_curr>d_plane_max) {
                         u_warp = u + d_curr;
+                        if(u_warp < 0 || u_warp > 320){
+//                            printf("_+++++++++ u_wrap3 out %d\n", u_warp);
+                            continue;
+                        }
                         if (u_warp<window_size || u_warp >= WIDTH - window_size)
                             continue;
-                        if(u_warp < 0 || u_warp > 320)
-                            printf("_+++++++++ u_wrap3 out %d\n", u_warp);
                         updatePosteriorMinimumNew(I1_block_addr, I2_line_addr + 16 * u_warp, d_curr, val, min_val, min_d);
                     }
                 }
+
+
         #pragma unroll
-                for (d_curr = d_plane_min; d_curr <= d_plane_max; d_curr++) {
+                for (d_curr = d_plane_min; d_curr < (d_plane_max + 1); d_curr++) {
                     u_warp = u + d_curr;
-                    if (u_warp<window_size || u_warp >= WIDTH - window_size)
+                    if(u_warp < 0 || u_warp > 320){
+//                        printf("_+++++++++ u_wrap4 out %d,%d,%d,%d,%d\n", u, d_curr, u_warp, d_plane_min, d_plane_max);
                         continue;
-                    if(u_warp < 0 || u_warp > 320)
-                        printf("_+++++++++ u_wrap4 out %d\n", u_warp);
-//                    updatePosteriorMinimumNew1(I1_block_addr, I2_line_addr + 16 * u_warp, d_curr, valid ? *(P + abs(d_curr - d_plane)) : 0, val, min_val, min_d);
+                    }
+                    if (u_warp<window_size || u_warp >= WIDTH - window_size){
+//                        printf("_+++++++++ u_wrap5 out\n");
+                        continue;
+                    }
+
                     updatePosteriorMinimumNew1(I1_block_addr, I2_line_addr + 16 * u_warp, d_curr, valid ? *(temp + abs(d_curr - d_plane)) : 0, val, min_val, min_d);
                 }
             }
-
 
 
             // set disparity value
@@ -806,12 +837,12 @@ if(d_addr > 320 * 240)
 }
 
 void computeTrianglePoints(const vector<Elas::support_pt> &p_support, const vector<Elas::triangle> &tri, \
-                           bool right_image, int32_t width, int32_t TRI_SIZE, int8_t* tp) {
+                           bool right_image, int32_t width, int32_t TRI_SIZE, uint32_t* tp) {
 
     // loop variables
     int32_t c1, c2, c3;
 //    float plane_a, plane_b, plane_c, plane_d;
-
+    memset(tp, 0,  WIDTH * HEIGH* sizeof(uint32_t));
     // for all triangles do
     for (uint32_t i = 0; i<TRI_SIZE; i++) {
         int num = 0;
@@ -864,12 +895,9 @@ void computeTrianglePoints(const vector<Elas::support_pt> &p_support, const vect
         // first part (triangle corner A->B)
         if ((int32_t)(A_u) != (int32_t)(B_u)) {
             for (int32_t u = max((int32_t)A_u, 0); u < min((int32_t)B_u, width); u++) {
-                if (!param.subsampling || u % 2 == 0) {
                     int32_t v_1 = (uint32_t)(AC_a*(float)u + AC_b);
                     int32_t v_2 = (uint32_t)(AB_a*(float)u + AB_b);
-                    for (int32_t v = min(v_1, v_2); v < max(v_1, v_2); v++)
-                        if (!param.subsampling || v % 2 == 0)
-                        {
+                    for (int32_t v = min(v_1, v_2); v < max(v_1, v_2); v++){
 //                            *((int16_t*)(tp + 2 * u + v * 2 * width)) = u;
 //                            *((int16_t*)(tp + 2 * u + v * 2 * width) + 1) = v;
 //                            *(tp + 2 * u + v * 2 * width + 1) = i;
@@ -880,8 +908,7 @@ void computeTrianglePoints(const vector<Elas::support_pt> &p_support, const vect
                             }
                             *(tp + u + v * width ) = i;
 //                            num++;
-                        }
-                }
+                    }
             }
 
         }
@@ -921,7 +948,7 @@ int32_t dims[3] = {WIDTH, HEIGH, WIDTH};
 void cuda_computeD(int32_t* disparity_grid_1, int32_t* disparity_grid_2,  vector<Elas::support_pt> &p_support, \
               vector<Elas::triangle> &tri_1, vector<Elas::triangle> &tri_2, \
               float* D1, float* D2, uint8_t* I1, uint8_t* I2, int8_t* P_g,\
-             int8_t *tp1_g, int8_t* tp2_g, int8_t* tp1_c, int8_t* tp2_c, float* cloud_g)
+             uint32_t *tp1_g, uint32_t* tp2_g, uint32_t* tp1_c, uint32_t* tp2_c, float* cloud_g)
 {    
     int32_t width, height, bpl;
     clock_t t1, t2;
@@ -943,10 +970,10 @@ void cuda_computeD(int32_t* disparity_grid_1, int32_t* disparity_grid_2,  vector
     int32_t TRI_SIZE2 = tri_2.size();
     tri_size = TRI_SIZE1;
 
-    int8_t* tp1_cpu = tp1_c;
-    int8_t* tp2_cpu = tp2_c;
-    int8_t *tp1_gpu = tp1_g;
-    int8_t *tp2_gpu = tp2_g;
+//    int8_t* tp1_cpu = tp1_c;
+//    int8_t* tp2_cpu = tp2_c;
+//    int8_t *tp1_gpu = tp1_g;
+//    int8_t *tp2_gpu = tp2_g;
 
 
     computeTrianglePoints(p_support, tri_1, 0, width, TRI_SIZE1, tp1_c);
@@ -961,7 +988,7 @@ void cuda_computeD(int32_t* disparity_grid_1, int32_t* disparity_grid_2,  vector
     err = cudaGetLastError();
     if(0 != err) printf("cuda error: %s\n", cudaGetErrorString(err));
 
-    printf("copy\n");
+//    printf("copy\n");
     cudaMemcpy(tri_gpu_1, &tri_1[0], sizeof(Elas::triangle) * TRI_SIZE1, cudaMemcpyHostToDevice);
     cudaMemcpy(tri_gpu_2, &tri_2[0], sizeof(Elas::triangle) * TRI_SIZE2, cudaMemcpyHostToDevice);
     //cudaMemcpy(P_gpu, P_g, sizeof(int8_t) * 64, cudaMemcpyHostToDevice);
@@ -970,6 +997,7 @@ void cuda_computeD(int32_t* disparity_grid_1, int32_t* disparity_grid_2,  vector
 
     int32_t plane_radius = 2; //(int32_t)max((float)ceil(param.sigma*param.sradius), (float)2.0);
 
+//    dim3 threads(280, 1);
     dim3 threads(320, 1);
     dim3 grid(1, 240);
 //    cudaDeviceSynchronize();
@@ -977,7 +1005,8 @@ void cuda_computeD(int32_t* disparity_grid_1, int32_t* disparity_grid_2,  vector
     err = cudaGetLastError();
     if(0 != err) printf("cuda error: %s\n", cudaGetErrorString(err));
 
-    printf("going Triangle_match kernel\n");
+//    printf("going Triangle_match kernel\n");
+//    printf("tri_size1,2 = %d, %d\n", TRI_SIZE1, TRI_SIZE2);
     Triangle_Match1 << <grid, threads, 0>> > (tri_gpu_1, disparity_grid_1, \
                   I1, I2, P_g, plane_radius, 0, D1, tp1_g, tri_size);
 
@@ -991,21 +1020,23 @@ void cuda_computeD(int32_t* disparity_grid_1, int32_t* disparity_grid_2,  vector
 
     //if(0 != err) printf("Triangle_Match1 cuda error: %s\n", cudaGetErrorString(err));
 
-    printf("leftRightConsistency\n");
+//    printf("leftRightConsistency\n");
 
     leftRightConsistencyCheck<<<grid, threads, 0>>>(D1, D2);
 //    cudaDeviceSynchronize();
 
-    printf("convert\n");
 
     dim3 threads2(320, 1);
     dim3 grid2(1, 200);
     Convert<<<grid2, threads2>>>(D1, cloud_g);
+
+
     gpuErrchk(err);
     cudaFree((void*)tri_gpu_1);
     cudaFree((void*)tri_gpu_2);
 //    cudaFree((void*)P_gpu);
     err =cudaDeviceSynchronize();
+
     gpuErrchk(err);
 
 
@@ -1051,3 +1082,4 @@ __global__ void leftRightConsistencyCheck(float* D1_g, float* D2_g)
 /***
  * 6. leftRightConsistencyCheck
  * */
+
