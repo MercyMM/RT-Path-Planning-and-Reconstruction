@@ -1,5 +1,5 @@
 ﻿#include "main.h"
-   
+#include "signal.h"
 
 int g_reliab , g_distance ;
 int32_t D_can_width = 60;  //[15,310] => 60
@@ -18,12 +18,29 @@ void SetGoal(CoreAPI* api, float Xoff, float Yoff);
 int GetOrSetIndex(int flag, int index);
 
 //int moveWithVelocity(CoreAPI* api, Flight* flight, float32_t xVelocityDesired, float32_t yVelocityDesired, float32_t zVelocityDesired, float32_t yawRateDesired ,  int timeoutInMs, float yawRateThresholdInDegS = 0.5, float velThresholdInMs = 0.5);
+void sig_handler(int sig){
+    if(sig == SIGINT){
+
+        printf("stop_transfe1\n");
+        int err_code = stop_transfer();
+        RETURN_IF_ERR2( err_code );
+        //make sure the ack packet from GUIDANCE is received
+        usleep( 10000 );
+        printf("stop_transfe2\n");
+        err_code = release_transfer();
+        printf("stop_transfe3\n");
+        RETURN_IF_ERR2( err_code );
+        printf("stop_transfe4\n");
+        exit(0);
+    }
+}
 
 int main(int argc, char** argv)
 {
-
+signal(SIGINT, sig_handler);
     printf("wait 5min\n");
     usleep(1000000);
+
 
     int status;
     //! Instantiate a serialDevice, an API object, flight and waypoint objects and a read thread.
@@ -41,12 +58,6 @@ int main(int argc, char** argv)
 //    printf("main tid = %d\n", gettid());
     pthread_t imagePID;
     pthread_t imagePID2;
-
-//    SetGoal(api, 0, 5);
-//PositionData curPosition = api->getBroadcastData().pos;
-//printf("cur = %d, %d\n", curPosition.latitude, curPosition.longitude );
-//printf("goal= %d, %d\n", goal_P.latitude, goal_P.longitude );
-//return 0;
 
 //        pthread_create(&imagePID2, NULL, changeIndex, NULL);
 //        pthread_join( imagePID2, NULL);
@@ -75,9 +86,40 @@ int main(int argc, char** argv)
 //    takeoffStatus = monitoredTakeoff(api, flight, blockingTimeout);
     printf("get control\n");
     printf("sleep 90s\n");
-    usleep(30000000);
+    usleep(1000000);
 
     pthread_create(&imagePID, NULL, imageProcess, (void*)api);
+//        pthread_join( imagePID, NULL);
+//return 0;
+  /*  
+for(int i = 0; i < 500; i++)    
+{
+        float Vx, Vy;
+        int index_copy ;
+        index_copy = GetOrSetIndex(0, 0);
+	index_copy = 10;
+
+        if(0 > index_copy)
+        {
+            moveWithVelocity(api, flight, 0, 0, 0, 0, 21);
+        }else //if ( index_copy >= 0 && index_copy <= 16)
+        {
+//           Vx = SpeedWindow[index_copy].y;
+//            Vy = -SpeedWindow[index_copy].x;
+		Vx = 0;
+		Vy = 0.2;		
+            printf("%d: %f, %f\n", index_copy, Vx, Vy);
+                uint8_t flag = 0x4b; //Velocity Control
+                flight->setMovementControl(flag, Vx, Vy, 0, 0);
+            usleep(10000); // 10000 ns;????
+        }
+
+    }
+
+
+//    pthread_join( imagePID, NULL);
+    return 0;
+*/    
     //! If the aircraft took off, continue to do flight control tasks
     takeoffStatus.status = 1;
     if (takeoffStatus.status == 1)
@@ -91,7 +133,7 @@ int main(int argc, char** argv)
         //init flight thread real-time param
         //set goal
         printf("sleep 3s\n");
-        uint8_t flag = 0x49; //Velocity Control
+        uint8_t flag = 0x4b; //Velocity Control
         usleep(3000000);
 
 //           for(int i = 0; i < 100; i++){
@@ -114,16 +156,14 @@ int main(int argc, char** argv)
             if(0 > index_copy)
             {
                 moveWithVelocity(api, flight, 0, 0, 0, 0, 21);
+                printf("stop");
             }else //if ( index_copy >= 0 && index_copy <= 16)
             {
-                Vx = SpeedWindow[index_copy].x;
+                Vx = -SpeedWindow[index_copy].x;
                 Vy = SpeedWindow[index_copy].y;
-                int elapsedTimes = 0;
-                int Timeout = 50; //ms
+            printf("%d: %f, %f\n", index_copy, Vx, Vy);
 
-                uint8_t flag = 0x49; //Velocity Control
-                VelocityData curVelocity = api->getBroadcastData().v;
-
+                uint8_t flag = 0x4b; //Velocity Control
                 flight->setMovementControl(flag, Vx, Vy, 0, 0);
                 usleep(10000); // 10000 ns;????
 
@@ -341,12 +381,11 @@ void* imageProcess(void* api)
 
 
         printf("sleep 10s\n");
-    usleep(10000000); // 10s;
+//    usleep(10000000); // 10s;
     init_Guidance();
 
 
     char key;
-//    cin >> key;
     char name_left[] = "l_0.png";
     char name_right[] = "r_0.png";
     char name_disp[] = "d_0.png";
@@ -367,8 +406,8 @@ void* imageProcess(void* api)
     Elas elas(param, (int32_t)WIDTH, (int32_t)HEIGH, D_can_width, D_can_height );
 
 //    string ROOT = "/home/ubuntu/sd/TK1-bak/image_png/";
-//    string left = "left1.png";
-//    string right = "right1.png";
+//    string left = "left6.png";
+//    string right = "right6.png";
 //    IplImage *img1 , *img2 ;
 
 
@@ -396,10 +435,10 @@ void* imageProcess(void* api)
         if(!g_greyscale_image_left[which_cpy].empty() && !g_greyscale_image_right[which_cpy].empty())
         {
 //            printf("show\n");
-//            imshow(string("left_")+char('0'+sensor_id), g_greyscale_image_left[which_cpy]);
-//            imshow(string("right_")+char('0'+sensor_id), g_greyscale_image_right[which_cpy]);
+            //imshow(string("left_")+char('0'+sensor_id), g_greyscale_image_left[which_cpy]);
+            //imshow(string("right_")+char('0'+sensor_id), g_greyscale_image_right[which_cpy]);
 
-//            key =  cvWaitKey(1);
+            //key =  cvWaitKey(1);
 
             //1. call elas add DWA; return Vx, Vy;
             //2. sem_post Vx, Vy; func main call sem_wait and get Vx, Vy;
@@ -410,8 +449,16 @@ void* imageProcess(void* api)
 //            usleep(100000);
             cout << "gg index: " << GetOrSetIndex(0,0) << endl;
             cout << endl;
+            /*
+                imwrite(name_left, g_greyscale_image_left[which_cpy]);
+                name_left[2]++;
+                imwrite(name_right, g_greyscale_image_right[which_cpy]);
+                name_right[2]++;
+if( name_right[2] > '9')
+return 0;
+*/
 //                key =  cvWaitKey(1);
-
+//          return 0;
 //usleep(1000000);
 //printf("sleep 1s\n");
 //left[4]++;
@@ -535,7 +582,7 @@ int GenerateTraj(point* obstacle, int obs_nums)
 //	printf("predict point:\n");
     for(int i = 0; i < DIRECTIONS; i++) //DIRECTIONS= 8+1+8
     {
-        Vx = SpeedWindow[i].x;
+        Vx = abs(SpeedWindow[i].x);
         Vy = SpeedWindow[i].y;
 
         float obs_dis = 100;
@@ -569,6 +616,7 @@ int GenerateTraj(point* obstacle, int obs_nums)
 //			printf("xxxx\n");
             continue;
         }
+
 
         Px = Vx * PREDICTT;
         Py = Vy * PREDICTT;
@@ -863,8 +911,8 @@ int GetOrSetIndex(int flag, int index)
         index_num = 0;
     }else if( 0 == flag) { //get index
         index_num++;
-        if(index_num > 10){
-            index_num = 10;
+        if(index_num > 20){
+            index_num = 30;
             sem_post(&sem_Index);
             return -1;
         }
