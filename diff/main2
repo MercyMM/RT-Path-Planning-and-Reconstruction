@@ -1,0 +1,322 @@
+
+
+int DynamicWindowApproach(point* obstacle, int obs_nums,  point goal)
+{
+        //1. compute window
+        //2. 模拟窗口内的运动轨迹 ,64条轨迹,存入traj向量
+        //traj 存放64个移动4s后的飞行器位置
+        GenerateTraj(obstacle, obs_nums);
+
+//	printf("NormalizeEval\n");
+        // 各评价函数正则化
+        NormalizeEval(goal);
+
+        //3. 评价函数选择最优路线
+        return  Evaluation();
+
+        //4. move dt ms.初期设想，运行20ｍｓ
+        // MoveDt();
+}
+
+int GenerateTraj(point* obstacle, int obs_nums)
+{
+
+        float Vx, Vy;
+        float Px, Py;
+
+
+//	printf("predict point:\n");
+        for(int i = 0; i < DIRECTIONS; i++)
+        {
+                Vx = SpeedWindow[i].x;
+                Vy = SpeedWindow[i].y;
+
+                float obs_dis = 100;
+                int flag = 0;
+                //如果轨迹穿过障碍物，或很接近障碍物，则舍去该轨迹
+        for(int t = 0; t < PREDICTT/DEL_DIS; t++) //t = (0, 11)
+                {
+
+                        Px = Vx * (t * DEL_DIS);
+                        Py = Vy * (t * DEL_DIS);
+                        for(int k = 0; k < obs_nums; k++)
+                        {
+                                obs_dis = pow( pow(Px - obstacle[k].x, 2) + \
+                                                pow(Py - obstacle[k].y, 2), 0.5);
+                if(15 == i)
+                {
+//                    printf("15 dis: %d, %f\n", t, obs_dis);
+                }
+                                if(obs_dis < SAFE_DIS )
+                {
+//                    printf("%d, %d, %d, (%f, %f), %f\n", i, t, k, \
+//                           Px, Py, obs_dis);
+                                        flag = 1;
+                                        predict[i].x = 0;
+                                        predict[i].y = 0;
+                                        break;
+                                }
+                        }
+                        if(1 == flag)
+                                break;
+                }
+                if(1 == flag)
+                {
+//			printf("xxxx\n");
+                        continue;
+                }
+
+                Px = Vx * PREDICTT;
+                Py = Vy * PREDICTT;
+                predict[i].x = Px;
+                predict[i].y = Py;
+                // predict[i].p.x = SpeedWindow[i].x * PREDICTT;
+                // predict[i].p.y = SpeedWindow[i].y * PREDICTT;
+//		printf("%f, %f  \n",Px, Py);
+
+        }
+//	printf("\n");
+}
+
+int NormalizeEval(point goal)
+{
+        for(int i = 0; i < DIRECTIONS; i ++)
+        {
+                if( 0 == predict[i].x && 0 == predict[i].y)
+                {
+//			printf("xxxx\n");
+                        continue;
+                }
+                float del_x = goal.x-predict[i].x;
+                if ( 0 == del_x)
+                {
+//			printf("del_x == 0\n");
+                        while(1);
+                }
+
+                EvalDB[i].heading = (goal.y-predict[i].y) / (goal.x-predict[i].x)   ;
+                EvalDB[i].dist = pow( pow(goal.x-predict[i].x, 2) + pow(goal.y-predict[i].y, 2), 0.5);
+                EvalDB[i].Vx = SpeedWindow[i].x;
+
+                if( 0 > EvalDB[i].heading)
+                        EvalDB[i].heading = -EvalDB[i].heading;
+//		printf(" %f\n", EvalDB[i].heading);
+        }
+        float heading_sum, dist_sum, Vx_sum;
+        for(int i = 0; i < DIRECTIONS; i++)
+        {
+                if( 0 == predict[i].x && 0 == predict[i].y)
+                {
+                        continue;
+                }
+                heading_sum += EvalDB[i].heading;
+                dist_sum 	+= EvalDB[i].dist;
+                Vx_sum		+= EvalDB[i].Vx;
+        }
+//	printf("heading_sum: %f\n", heading_sum);
+        // printf("%f, %f, %f\n", heading_sum, dist_sum, Vx_sum);
+        for(int i = 0; i < DIRECTIONS; i++)
+        {
+                if( 0 == predict[i].x && 0 == predict[i].y)
+                {
+            printf("xxxx\n");
+                        continue;
+                }
+                EvalDB_Nor[i].heading = EvalDB[i].heading / heading_sum;
+                EvalDB_Nor[i].dist 	  = EvalDB[i].dist /dist_sum;
+                EvalDB_Nor[i].Vx      = EvalDB[i].Vx / Vx_sum;
+//        printf("%f, %f, %f\n", EvalDB_Nor[i].heading,EvalDB_Nor[i].dist,EvalDB_Nor[i].Vx);
+        printf("%d: %f, %f  =  %f\n", i, EvalDB_Nor[i].heading, EvalDB_Nor[i].dist, \
+               HEADING * EvalDB_Nor[i].heading + DIST * EvalDB_Nor[i].dist);
+        }
+
+}
+
+int Evaluation()
+{
+
+        int index = -1;
+    float eval = 100;
+        for(int i = 0; i < DIRECTIONS; i++)
+        {
+                if( 0 == predict[i].x && 0 == predict[i].y)
+                        continue;
+                float heading 	= EvalDB_Nor[i].heading;
+                float dist 		= EvalDB_Nor[i].dist;
+                float Vx 		= EvalDB_Nor[i].Vx;
+
+//		float eval_tmp = HEADING * heading + DIST * dist + VEL * Vx;
+        float eval_tmp = HEADING * heading + DIST * dist ;
+                if(eval > eval_tmp)
+                {
+                        eval = eval_tmp;
+                        index = i;
+        }
+        }
+        printf("index = %d\n", index);
+        return index;
+}
+
+
+void createObs(Elas &elas, struct obs_point *obs_arr, \
+               vector<struct point> *obstacle)
+{
+    struct timeval start, end;
+    double timeuse;
+
+
+
+    IplImage* img1f = cvCreateImage(cvSize(WIDTH, HEIGH), IPL_DEPTH_8U,1);
+    IplImage* img2f = cvCreateImage(cvSize(WIDTH, HEIGH), IPL_DEPTH_8U,1);
+    IplImage* img3f = cvCreateImage(cvSize(WIDTH, HEIGH), IPL_DEPTH_8U,1);
+
+
+    for(int32_t i = 100*HEIGH; i < 200*HEIGH; i++) {
+        cout << elas.cloud_c[i].z <<' ';
+        if(i % HEIGH == 0)
+            cout<<endl;
+    }
+
+    for (int32_t i=0; i<WIDTH*HEIGH; i++){
+        float dis_y = elas.cloud_c[i].y;
+        if ( 1000 < dis_y)
+            dis_y = 1000;
+        if(dis_y <= -1000)
+            dis_y = -1000;
+        dis_y += 1000;
+        dis_y /= 10;
+
+            img1f->imageData[i] = (uint8_t)(dis_y);
+    }
+
+
+    //x axi is cloud_c.z
+    for (int32_t i=0; i<WIDTH*HEIGH; i++){
+        float dis = elas.cloud_c[i].z;
+        if ( 10000 < dis)
+            dis = 10000;
+        if(dis <= 0)
+            img2f->imageData[i] = 255;
+        else
+            img2f->imageData[i] = (uint8_t)(dis / 40);
+    }
+    gettimeofday(&start, NULL);
+
+    //for(int v = 19; v < 220; v ++ )
+    for(int v = 90; v < 130; v ++ )
+    {
+        for(int u = 3; u < 313; u ++)
+        {
+            int index = u + v * WIDTH;
+            float dis_y = elas.cloud_c[index].y;
+            float dis_z = elas.cloud_c[index].z;
+            float dis_x = elas.cloud_c[index].x;
+            img3f->imageData[index] = 255;
+
+            if( dis_y > -200 && dis_y < 200 )
+            {
+        //        if ( 10000 < dis_z)
+          //          dis_z = 10000;
+            //    if(dis_z <= 0)
+              //      img3f->imageData[index] = 255;
+             //   else
+//                    img3f->imageData[index] = (uint8_t)(dis_z / 40);
+                if(dis_z < 6000 && dis_z > 0)
+                {
+                    //add this point to obstacle
+                    struct obs_point *p = &obs_arr[u];
+
+                    //if(124 == u)
+                    //    printf("124: (%f, %f) \n", dis_z, dis_x);
+                    if(0 == p->y)
+                    {
+                        p->y = dis_x;
+                    }else
+                    {
+                        p->y = (p->y + dis_x)/2;
+                    }
+                    if(0 == p->x )
+                    {
+                        p->x = dis_z;
+                    }else
+                    {
+                        p->x = min(dis_z , p->x);
+                    }
+                    p->num++;
+                }else
+                    continue;
+
+            }else
+                continue;
+        }
+
+    }
+
+    gettimeofday(&end, NULL);
+    timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
+    printf(" create Obs1---true : %fms\n", timeuse/1000);
+
+    gettimeofday(&start, NULL);
+    //clear not use
+    for(int i = 0; i < 320; i++)
+    {
+        if(obs_arr[i].num >= 5)
+        {
+//           printf("(%f, %f) %d %d\n", obs_arr[i].x, obs_arr[i].y, obs_arr[i].num, i);
+
+        }
+        else //if(18 > obs_arr[i].num)
+        {
+            obs_arr[i].x = 0;
+            obs_arr[i].y = 0;
+            obs_arr[i].num = 0;
+        }
+    }
+
+    for(int i = 5; i < 320 - 5; )
+    {
+        float base = obs_arr[i].x;
+        int flag = 0;
+        if(obs_arr[i].num == 0)
+        {
+            i ++;
+            continue;
+        }
+        for(int j = i - 2; j < i + 2; j++)
+        {
+            float cha = abs(obs_arr[j].x - base);
+            if(cha < 500)   //cha < 0.5m
+            {
+                flag++;
+            }
+        }
+        if(flag > 3)        //flag =  4 or 5;
+        {
+            obs_arr[i].num = 1;
+            struct point obsN;
+            obsN.x = obs_arr[i].x / 1000;
+            obsN.y = obs_arr[i].y / 1000;
+            obstacle->push_back(obsN);
+            printf("{%f, %f},\n", obsN.x, obsN.y);
+            i += 5;
+        }
+        else
+        {
+            obs_arr[i].num = 0;
+            i ++;
+        }
+    }
+
+    //struct point obsN;
+    //obsN.x = 2;
+    //obsN.y = 0;
+    //obstacle.push_back(obsN);
+    gettimeofday(&end, NULL);
+    timeuse = 1000000* (end.tv_sec-start.tv_sec) + end.tv_usec-start.tv_usec;
+    printf(" create Obs---true : %fms\n", timeuse/1000);
+
+//    cvShowImage("y",img1f);
+//    cvShowImage("consistency",img2f);
+//    cvShowImage("high",img3f);
+
+}

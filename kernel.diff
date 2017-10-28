@@ -1,0 +1,99 @@
+--- ../elas/sobelandmatch/sobelandmatch/kernel.cu	2017-05-06 05:06:34.000000000 +0800
++++ ./src/kernel.cu	2017-10-23 17:42:12.053779935 +0800
+@@ -5,8 +5,8 @@
+ #include <stdio.h>
+ #include <time.h>
+ 
+-#include "cv.h"
+-#include "highgui.h"
++//#include "cv.h"
++//#include "highgui.h"
+ #include "elas.h"
+ #include <vector>
+ #include "triangle.h"
+@@ -25,6 +25,16 @@
+  * */
+ 
+ 
++#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__);}
++inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
++{
++    if(code != cudaSuccess)
++    {
++        fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
++        if(abort) exit(code);
++    }
++}
++
+ 
+ #define WIDTH 320
+ #define HEIGH 240
+@@ -154,6 +164,7 @@
+     dim3 grid( 1, HEIGH - 6 );
+ //    cudaDeviceSynchronize();
+     createDesc_gpu_kernel<<<grid, threads, 0 >>>(I_desc, I_du_g, I_dv_g );
++    gpuErrchk(cudaDeviceSynchronize());
+ //    cudaError_t err = cudaGetLastError();
+ //    printf("cuda error: %s\n", cudaGetErrorString(err));
+ //    cudaDeviceSynchronize(); //2.88 - 0.19
+@@ -551,16 +562,17 @@
+     int32_t D_can_width = 60;  //[15,310] => 60
+     int32_t D_can_height = 48; //[5, 230] => 46
+ 
+-    cudaMemset(D_sup_g, -1, D_can_width*D_can_height * sizeof(int8_t));
++    gpuErrchk(cudaMemset(D_sup_g, -1, D_can_width*D_can_height * sizeof(int8_t)));
+ 
+     dim3 threads(BLOCKX, BLOCKY);
+     dim3 grid(GRIDX, GRIDY);
+ 
+-    cudaFuncSetCacheConfig(sptMathKernel,cudaFuncCachePreferShared);
++        gpuErrchk(cudaFuncSetCacheConfig(sptMathKernel,cudaFuncCachePreferShared));
+     //compute support
+ //    cudaDeviceSynchronize();    //
+     sptMathKernel << <grid, threads, 0 >> > (D_can_width, D_can_height, D_sup_g, I_desc1, I_desc2);
+-    cudaDeviceSynchronize();    //13ms
++    //cudaDeviceSynchronize();    //13ms
++    gpuErrchk(cudaDeviceSynchronize());
+ 
+     //put D_sup to vector of support
+     vector<Elas::support_pt> p_support;
+@@ -963,7 +975,7 @@
+     err = cudaGetLastError();
+     if(0 != err) printf("cuda error: %s\n", cudaGetErrorString(err));
+ 
+-    printf("goin Triangle_match kernel\n");
++//    printf("going Triangle_match kernel\n");
+     Triangle_Match1 << <grid, threads, 0>> > (tri_gpu_1, disparity_grid_1, \
+                   I1, I2, P_g, plane_radius, 0, D1, tp1_g, tri_size);
+ 
+@@ -973,21 +985,24 @@
+     err = cudaGetLastError();
+     if(0 != err) printf("Triangle_Match1 cuda error: %s\n", cudaGetErrorString(err));
+ 
+- //   cudaDeviceSynchronize();
+-    err = cudaGetLastError();
+-    if(0 != err) printf("Triangle_Match1 cuda error: %s\n", cudaGetErrorString(err));
++//    gpuErrchk(cudaDeviceSynchronize());
++
++    //if(0 != err) printf("Triangle_Match1 cuda error: %s\n", cudaGetErrorString(err));
+ 
+ 
+ 
+     leftRightConsistencyCheck<<<grid, threads, 0>>>(D1, D2);
+ //    cudaDeviceSynchronize();
+ 
+-    ConvertD2Z( D1,  cloud_g);
++    dim3 threads2(320, 1);
++    dim3 grid2(1, 200);
++    Convert<<<grid2, threads2>>>(D1, cloud_g);
++    gpuErrchk(err);
+     cudaFree((void*)tri_gpu_1);
+     cudaFree((void*)tri_gpu_2);
+ //    cudaFree((void*)P_gpu);
+-    //  cudaDeviceSynchronize();
+-
++    err =cudaDeviceSynchronize();
++    gpuErrchk(err);
+ 
+ 
+ }

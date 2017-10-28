@@ -1,0 +1,23 @@
+wait 5min
+User Configuration read successfully. 
+
+These are your User_Config settings.
+Serial port = /dev/ttyTHS1
+Baudrate = 115200
+Drone/FC Version: M100
+SDK Version: 3.1
+App ID: 1030836
+App Key: 8c17b6111e90a5619b29fdc28212939d0173e52607fe331d8e9b37c2e9849646
+
+Does everything look correct? If not, navigate to Linux/UserConfig.txt and make changes.
+
+STATUS init,line 52: Attempting to open device /dev/ttyTHS1 with baudrate 115200...
+STATUS init,line 61: ...Serial started successfully.
+
+Attempting activation..
+Automatic activation successful.
+Obtain control running..
+Obtained control successfully.
+get control
+sleep 90s
+sleep 3s
